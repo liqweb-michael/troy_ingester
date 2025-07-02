@@ -93,14 +93,14 @@ async function getLatestPrices(productId = null) {
   }
 
   const query = `
-    SELECT DISTINCT ON (product_id, price, store_id)
-      store_id,
-      product_id,
-      price,
-      timestamp
-    FROM troy_prices_real_time
-    ${whereClause}
-    ORDER BY product_id ASC, price ASC,store_id ASC, timestamp DESC
+    SELECT DISTINCT ON (product_id, store_id)
+  store_id,
+  product_id,
+  price,
+  timestamp
+FROM troy_prices_real_time
+${whereClause}
+ORDER BY product_id, store_id, timestamp DESC
   `;
 
   const result = await pool.query(query, values);
