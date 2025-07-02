@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Real-Time Prices</title>
+  <script src="/socket.io/socket.io.js"></script>
+</head>
+<body>
+  <h1>Live Prices</h1>
+  <ul id="price-list">
+    <% items.forEach(item => { %>
+      <li id="price-<%= item.store_id %>-<%= item.product_id %>">
+        Store <%= item.store_id %>, Product <%= item.product_id %>: $<%= item.price %> @ <%= item.timestamp %>
+      </li>
+    <% }); %>
+  </ul>
+
+  <script>
+    const socket = io();
+
+    socket.on('priceUpdateBatch', data => {
+        data.forEach(item => {
+            const key = `price-${item.store_id}-${item.product_id}`;
+            const existing = document.getElementById(key);
+
+            const text = `Store ${item.store_id}, Product ${item.product_id}: $${item.price} @ ${item.timestamp}`;
+
+            if (existing) {
+            existing.textContent = text;
+            } else {
+            const li = document.createElement('li');
+            li.id = key;
+            li.textContent = text;
+            document.getElementById('price-list').appendChild(li);
+            }
+        });
+    });
+  </script>
+</body>
+</html>
