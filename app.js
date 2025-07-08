@@ -94,17 +94,40 @@ async function getLatestPrices(productId = null) {
 
   const query = `
     SELECT DISTINCT ON (product_id, store_id)
-  store_id,
-  product_id,
-  price,
-  timestamp
-FROM troy_prices_real_time
-${whereClause}
-ORDER BY product_id, store_id, timestamp DESC
+      prt.store_id,
+      prt.product_id,
+      price,
+      timestamp,
+      s.name as store_name,
+      s.url as store_url,
+      p.name as product_name,
+      sp.url as product_url
+    FROM troy_prices_real_time prt
+    JOIN troy_stores s ON s.id = prt.store_id
+    JOIN troy_products p ON p.id = prt.product_id
+    JOIN troy_store_products sp ON sp.store_id = prt.store_id and sp.product_id = prt.product_id
+    ${whereClause}
+    ORDER BY product_id, store_id, timestamp DESC
   `;
 
   const result = await pool.query(query, values);
-  return result.rows;
+
+  // separate this out into products
+  const products = result.rows.reduce((acc, item) => {
+    if (!acc[item.product_id]) {
+      acc[item.product_id] = [];
+    }
+    acc[item.product_id].push(item);
+    return acc;
+  }, {});
+
+  // Now sort each group by price
+  Object.values(products).forEach(group => {
+    group.sort((a, b) => a.price - b.price); // ascending order
+  });
+
+  console.log(products);
+  return products;
 }
 
 
@@ -149,8 +172,8 @@ app.get('/prices', async (req, res) => {
 // GET /index - Render prices as HTML
 app.get('/', async (req, res) => {
   try {
-    const rows = await getLatestPrices();
-    res.render('index', {items: rows});
+    const products = await getLatestPrices();
+    res.render('index', {products: products});
   } catch (err) {
     console.error(err);
     res.status(500).send('Error loading index');

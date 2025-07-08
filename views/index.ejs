@@ -2,38 +2,108 @@
 <html>
 <head>
   <title>Real-Time Prices</title>
+  <script src="https://cdn.tailwindcss.com"></script>
   <script src="/socket.io/socket.io.js"></script>
-</head>
-<body>
-  <h1>Live Prices</h1>
-  <ul id="price-list">
-    <% items.forEach(item => { %>
-      <li id="price-<%= item.store_id %>-<%= item.product_id %>">
-        Store <%= item.store_id %>, Product <%= item.product_id %>: $<%= item.price %> @ <%= item.timestamp %>
-      </li>
-    <% }); %>
-  </ul>
 
   <script>
-    const socket = io();
-
-    socket.on('priceUpdateBatch', data => {
-        data.forEach(item => {
-            const key = `price-${item.store_id}-${item.product_id}`;
-            const existing = document.getElementById(key);
-
-            const text = `Store ${item.store_id}, Product ${item.product_id}: $${item.price} @ ${item.timestamp}`;
-
-            if (existing) {
-            existing.textContent = text;
-            } else {
-            const li = document.createElement('li');
-            li.id = key;
-            li.textContent = text;
-            document.getElementById('price-list').appendChild(li);
-            }
-        });
-    });
+    const products = <%- JSON.stringify(products) %>;
   </script>
+</head>
+<body class="font-sans m-5">
+  <h1 class="text-2xl font-semibold mb-4">Live Prices</h1>
+
+<div id="price-tables" class="max-w-[500px]"></div>
+
+<script>
+  const socket = io();
+
+  // `products` already defined by EJS-injected JSON
+  // Example: const products = <%- JSON.stringify(products) %>;
+
+  function formatDate(ts) {
+    return new Date(ts).toLocaleString();
+  }
+
+  function formatPrice(p) {
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: 'USD'
+    }).format(parseFloat(p));
+  }
+
+  function renderTables() {
+  const container = document.getElementById('price-tables');
+  container.innerHTML = '';
+
+  Object.values(products).forEach(product => {
+    const title = document.createElement('h2');
+    title.className = 'text-xl font-semibold mb-2';
+    title.textContent = product[0].product_name;
+    container.appendChild(title);
+
+    const table = document.createElement('table');
+    table.className = 'min-w-full bg-white border border-gray-400 rounded shadow overflow-hidden mb-10';
+
+    const thead = document.createElement('thead');
+    thead.innerHTML = `
+      <tr class="bg-gray-100 text-left text-sm font-medium text-gray-700">
+        <th class="px-4 py-2 border-b border-gray-400">&nbsp;</th>
+        <th class="px-4 py-2 border-b border-gray-400">Store</th>
+        <th class="px-4 py-2 border-b border-gray-400">Price</th>
+      </tr>`;
+    table.appendChild(thead);
+
+    const tbody = document.createElement('tbody');
+    let count = 0;
+    product.forEach(store => {
+      count ++;
+
+      const row = document.createElement('tr');
+      row.className = 'hover:bg-gray-50';
+
+      const tdCount = document.createElement('td');
+      tdCount.className = 'px-4 py-2 border-b border-gray-200 m-3';
+      tdCount.innerHTML = `<div class="bg-orange-400 text-white font-medium p-2 text-center">${count}</div>`;
+
+      const tdStore = document.createElement('td');
+      tdStore.className = 'px-4 py-2 border-b border-gray-200';
+      tdStore.innerHTML = `<a href="${store.product_url}" class="text-blue-600 hover:underline" target="_blank">${store.store_name}</a>`;
+
+      const tdPrice = document.createElement('td');
+      tdPrice.className = 'px-4 py-2 border-b border-gray-200';
+      tdPrice.innerHTML = `
+        <span class="font-medium text-gray-800">${formatPrice(store.price)}</span>
+        <div class="text-sm text-gray-500">${formatDate(store.timestamp)}</div>
+      `;
+
+      row.appendChild(tdCount);
+      row.appendChild(tdStore);
+      row.appendChild(tdPrice);
+      tbody.appendChild(row);
+    });
+
+    table.appendChild(tbody);
+    container.appendChild(table);
+  });
+}
+
+
+  // Initial render
+  renderTables();
+
+  // Handle batch update
+  socket.on('priceUpdateBatch', data => {
+    // Group data by product_id
+    products = {};
+    data.forEach(item => {
+      if (!products[item.product_id]) {
+        products[item.product_id] = [];
+      }
+      products[item.product_id].push(item);
+    });
+    renderTables();
+  });
+</script>
+
 </body>
 </html>
