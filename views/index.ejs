@@ -4,10 +4,9 @@
 <head>
     <title>Real-Time Prices</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="/socket.io/socket.io.js"></script>
 
     <script>
-        const products = <%- JSON.stringify(products) %>;
+        let prices = <%- JSON.stringify(prices) %>;
     </script>
 </head>
 
@@ -17,11 +16,6 @@
     <div id="price-tables" class="max-w-[500px]"></div>
 
     <script>
-        const socket = io();
-
-        // `products` already defined by EJS-injected JSON
-        // Example: const products = <%- JSON.stringify(products) %>;
-
         function formatDate(ts) {
             return new Date(ts).toLocaleString();
         }
@@ -36,6 +30,15 @@
         function renderTables() {
             const container = document.getElementById('price-tables');
             container.innerHTML = '';
+
+            let products = prices.products;
+            let spot = prices.spot;
+
+
+            const spotDiv = document.createElement('div');
+            spotDiv.className = 'text-lg font-semibold mb-2';
+            spotDiv.textContent = 'Spot: ' + formatPrice(prices.spot);
+            container.appendChild(spotDiv);
 
             Object.values(products).forEach(product => {
                 const title = document.createElement('h2');
@@ -56,10 +59,21 @@
                 table.appendChild(thead);
 
                 const tbody = document.createElement('tbody');
+
+
+                // calculate the prices
+                product.forEach(store => {
+                    const multiplier = store.price / store.spot_price;
+                    let adjusted_price = spot * multiplier;
+                    store.adjusted_price = adjusted_price;
+                });
+
+                product.sort((a, b) => a.adjusted_price - b.adjusted_price);
+
+
                 let count = 0;
                 product.forEach(store => {
                     count++;
-                    let adjustment = store.spot_price;
 
                     const row = document.createElement('tr');
                     row.className = 'hover:bg-gray-50';
@@ -75,9 +89,9 @@
                     const tdPrice = document.createElement('td');
                     tdPrice.className = 'px-4 py-2 border-b border-gray-200';
                     tdPrice.innerHTML = `
-        <span class="font-medium text-gray-800">${formatPrice(store.price)}</span>
+        <span class="font-medium text-gray-800">${formatPrice(store.adjusted_price)}</span>
+        <div class="text-sm text-gray-500">${formatPrice(store.price)}</div>
         <div class="text-sm text-gray-500">${formatDate(store.timestamp)}</div>
-        <div class="text-sm text-gray-500">${adjustment}</div>
       `;
 
                     row.appendChild(tdCount);
@@ -92,21 +106,42 @@
         }
 
 
-        // Initial render
         renderTables();
+        
+        // get highest timestamp
+        const highestTs = Math.max(...Object.values(prices.products).flatMap(product => product.map(store => store.timestamp)));
+        const refreshTime = highestTs + 630000;
 
-        // Handle batch update
-        socket.on('priceUpdateBatch', data => {
-            // Group data by product_id
-            products = {};
-            data.forEach(item => {
-                if (!products[item.product_id]) {
-                    products[item.product_id] = [];
-                }
-                products[item.product_id].push(item);
-            });
+        setTimeout(() => {
+            try {
+                console.log('Fetching prices');
+                fetch('/prices')
+                    .then(response => response.json())
+                    .then(data => {
+                        prices = data;
+                        renderTables();
+                    })
+                    .catch(error => {
+                        console.error('Error fetching prices:', error);
+                    });
+            } catch (error) {
+                console.error('Error fetching prices:', error);
+            }
             renderTables();
-        });
+        }, refreshTime);
+
+        setInterval(async () => {
+            try {
+                const response = await fetch('/spot');
+                const spot = await response.json();
+                prices.spot = spot.spot;
+                console.log('Spot: ', spot.spot);
+                renderTables();
+            } catch (error) {
+                console.error('Error fetching prices:', error);
+            }
+        }, 20000);
+
     </script>
 
 </body>

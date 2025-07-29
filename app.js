@@ -1,7 +1,7 @@
 const express = require('express');
 const bodyParser = require('body-parser');
 const { Pool } = require('pg');
-const { Server } = require('socket.io');
+// const { Server } = require('socket.io');
 const path = require('path');
 
 const dotenv = require('dotenv');
@@ -13,7 +13,7 @@ const http = require('http');
 // const { config } = require('process');
 const server = http.createServer(app);
 
-const io = new Server(server); // bind socket.io to the same server
+// const io = new Server(server); // bind socket.io to the same server
 
 // serve static files if needed
 app.use(express.static('public'));
@@ -35,50 +35,18 @@ app.use(bodyParser.json());
 app.set('view engine', 'ejs');
 
 
-let updatePending = false;
-let debounceTimer = null;
-let lastEmitTime = Date.now();
-let lastUpdateTime = null;
+async function getSpotPrice()
+{
+    const query = `
+        SELECT ask
+        FROM spot_prices_real_time
+        WHERE symbol = 'XAU/CAD'
+        ORDER BY time DESC
+        LIMIT 1
+    `;
 
-// Called whenever /incoming receives a new value
-function scheduleEmit() {
-    updatePending = true;
-    lastUpdateTime = Date.now();
-
-    // Reset debounce timer: emit if quiet for 10s
-    if (debounceTimer) clearTimeout(debounceTimer);
-    debounceTimer = setTimeout(() => {
-        const now = Date.now();
-        const timeSinceLastUpdate = now - lastUpdateTime;
-
-        if (timeSinceLastUpdate >= 10_000 && updatePending) {
-            emitLatestPrices();
-        }
-    }, 10_000);
-}
-
-// Force emit after 30s no matter what
-setInterval(() => {
-    const now = Date.now();
-    const timeSinceLastEmit = now - lastEmitTime;
-
-    if (updatePending && timeSinceLastEmit >= 30_000) {
-        emitLatestPrices();
-    }
-}, 5_000);
-
-// Do the actual emit
-function emitLatestPrices() {
-    updatePending = false;
-    lastEmitTime = Date.now();
-    if (debounceTimer) {
-        clearTimeout(debounceTimer);
-        debounceTimer = null;
-    }
-
-    getLatestPrices().then(latestData => {
-        io.emit('priceUpdateBatch', latestData);
-    }).catch(console.error);
+    const result = await pool.query(query);
+    return result.rows[0].ask;
 }
 
 
@@ -131,6 +99,21 @@ async function getLatestPrices(productId = null) {
 }
 
 
+async function getLatestPricesWithSpot(productId = null) {
+    // get products and spot price asynchronously
+    const [products, spot_price] = await Promise.all([
+        getLatestPrices().catch(err => {
+            console.error(err);
+            res.status(500).json({ error: 'Database error' });
+        }),
+        getSpotPrice().catch(err => {
+            console.error(err);
+            res.status(500).json({ error: 'Database error' });
+        })
+    ]);
+
+    return { products: products, spot: spot_price };
+}
 
 // POST /incoming - Add items to a table
 app.post('/incoming', async (req, res) => {
@@ -167,26 +150,36 @@ app.post('/incoming', async (req, res) => {
 });
 
 
+
+
 // GET /prices - Return all items
 app.get('/prices', async (req, res) => {
-    const { p } = req.query;
+    const prices = await getLatestPricesWithSpot();
 
-    try {
-        const rows = await getLatestPrices(p);
-
-        res.json(rows);
-    } catch (err) {
-        console.error(err);
-        res.status(500).json({ error: 'Database error' });
-    }
+    res.json(prices);
 });
+
+
+// GET /spot - Return spot price
+app.get('/spot', async (req, res) => {
+    // get products and spot price asynchronously
+    const [spot_price] = await Promise.all([
+        getSpotPrice().catch(err => {
+            console.error(err);
+            res.status(500).json({ error: 'Database error' });
+        })
+    ]);
+
+    res.json({ spot: spot_price });
+});
+
 
 
 // GET /index - Render prices as HTML
 app.get('/', async (req, res) => {
     try {
-        const products = await getLatestPrices();
-        res.render('index', { products: products });
+        const prices = await getLatestPricesWithSpot();
+        res.render('index', { prices: prices });
     } catch (err) {
         console.error(err);
         res.status(500).send('Error loading index');
