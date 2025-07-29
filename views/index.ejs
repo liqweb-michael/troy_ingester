@@ -27,6 +27,42 @@
             }).format(parseFloat(p));
         }
 
+        function scheduleRefresh() {
+            // find the highest timestamp
+            const highestTs = Object.values(prices.products)
+                .flatMap(product => product.map(store => store.timestamp))
+                .reduce((max, ts) => (ts > max ? ts : max), "");
+
+            if (!highestTs) {
+                console.warn("No timestamps found, retrying in 1 minute...");
+                setTimeout(scheduleRefresh, 60000);
+                return;
+            }
+
+            // Convert ISO string to ms timestamp
+            const highestTsMs = new Date(highestTs).getTime();
+
+            // Schedule refresh 10.5 minutes after highest timestamp
+            const refreshTime = Math.max(highestTsMs + 630000 - Date.now(), 0);
+
+            console.log(`Next refresh in ${Math.round(refreshTime / 1000)} seconds`);
+
+            setTimeout(() => {
+                fetch("/prices")
+                    .then(res => res.json())
+                    .then(data => {
+                        prices = data;
+                        renderTables();
+                        scheduleRefresh(); // re-schedule after data is refreshed
+                    })
+                    .catch(error => {
+                        console.error("Error fetching prices:", error);
+                        setTimeout(scheduleRefresh, 60000); // retry after 1 min if error
+                    });
+            }, refreshTime);
+        }
+
+
         function renderTables() {
             const container = document.getElementById('price-tables');
             container.innerHTML = '';
@@ -51,11 +87,11 @@
 
                 const thead = document.createElement('thead');
                 thead.innerHTML = `
-      <tr class="bg-gray-100 text-left text-sm font-medium text-gray-700">
-        <th class="px-4 py-2 border-b border-gray-400">&nbsp;</th>
-        <th class="px-4 py-2 border-b border-gray-400">Store</th>
-        <th class="px-4 py-2 border-b border-gray-400">Price</th>
-      </tr>`;
+                    <tr class="bg-gray-100 text-left text-sm font-medium text-gray-700">
+                        <th class="px-4 py-2 border-b border-gray-400">&nbsp;</th>
+                        <th class="px-4 py-2 border-b border-gray-400">Store</th>
+                        <th class="px-4 py-2 border-b border-gray-400">Price</th>
+                    </tr>`;
                 table.appendChild(thead);
 
                 const tbody = document.createElement('tbody');
@@ -89,10 +125,10 @@
                     const tdPrice = document.createElement('td');
                     tdPrice.className = 'px-4 py-2 border-b border-gray-200';
                     tdPrice.innerHTML = `
-        <span class="font-medium text-gray-800">${formatPrice(store.adjusted_price)}</span>
-        <div class="text-sm text-gray-500">${formatPrice(store.price)}</div>
-        <div class="text-sm text-gray-500">${formatDate(store.timestamp)}</div>
-      `;
+                        <span class="font-medium text-gray-800">${formatPrice(store.adjusted_price)}</span>
+                        <div class="text-sm text-gray-500">${formatPrice(store.price)}</div>
+                        <div class="text-sm text-gray-500">${formatDate(store.timestamp)}</div>
+                    `;
 
                     row.appendChild(tdCount);
                     row.appendChild(tdStore);
@@ -107,29 +143,10 @@
 
 
         renderTables();
-        
-        // get highest timestamp
-        const highestTs = Math.max(...Object.values(prices.products).flatMap(product => product.map(store => store.timestamp)));
-        const refreshTime = highestTs + 630000;
 
-        setTimeout(() => {
-            try {
-                console.log('Fetching prices');
-                fetch('/prices')
-                    .then(response => response.json())
-                    .then(data => {
-                        prices = data;
-                        renderTables();
-                    })
-                    .catch(error => {
-                        console.error('Error fetching prices:', error);
-                    });
-            } catch (error) {
-                console.error('Error fetching prices:', error);
-            }
-            renderTables();
-        }, refreshTime);
+        scheduleRefresh();
 
+        // Update the spot price every 20 seconds
         setInterval(async () => {
             try {
                 const response = await fetch('/spot');
