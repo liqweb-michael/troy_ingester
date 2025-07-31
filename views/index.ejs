@@ -100,7 +100,9 @@
                 // calculate the prices
                 product.forEach(store => {
                     const multiplier = store.price / store.spot_price;
-                    let adjusted_price = spot * multiplier;
+                    const adjustment = store.price - store.spot_price;
+                    //let adjusted_price = spot * multiplier;
+                    let adjusted_price = Number(spot) + Number(adjustment);
                     store.adjusted_price = adjusted_price;
                 });
 
